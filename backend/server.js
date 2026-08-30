@@ -12,7 +12,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/admin/dashboard', require('./routes/dashboard'));
 app.use('/api/admin/actions', require('./routes/actions'));
 
-const PORT = process.env.ADMIN_PORT || 4000;
+const PORT = process.env.PORT || process.env.ADMIN_PORT || 4000;
 app.listen(PORT, () => {
   console.log(`[AdminBackend] Server listening on port ${PORT}`);
 });
