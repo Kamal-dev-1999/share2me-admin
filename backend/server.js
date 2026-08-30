@@ -14,6 +14,7 @@ app.use('/api/admin/dashboard', require('./routes/dashboard'));
 app.get('/health', (req, res) => res.status(200).json({ status: 'OK', timestamp: new Date() }));
 
 app.use('/api/admin/actions', require('./routes/actions'));
+app.use('/api/admin/vendors', require('./routes/vendors'));
 
 const PORT = process.env.PORT || process.env.ADMIN_PORT || 4000;
 app.listen(PORT, () => {

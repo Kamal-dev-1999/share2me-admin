@@ -7,12 +7,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, FileText, PlusCircle, History, ScrollText,
-  LogOut, ShieldAlert, Lock, Menu, X, ArrowUpRight
+  LogOut, ShieldAlert, Lock, Menu, X, ArrowUpRight, Store
 } from "lucide-react";
 import { useState } from "react";
 
 const NAV_ITEMS = [
   { href: "/",             icon: LayoutDashboard, label: "Dashboard" },
+  { href: "/vendors",      icon: Store,           label: "Vendors" },
   { href: "/blogs",        icon: FileText,        label: "Blogs" },
   { href: "/blogs/editor", icon: PlusCircle,      label: "Create Blog" },
   { href: "/revisions",    icon: History,         label: "Revisions" },
