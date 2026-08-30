@@ -10,6 +10,9 @@ app.use(express.json());
 // Mount the admin routes
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/dashboard', require('./routes/dashboard'));
+// Health Check Endpoint for UptimeRobot
+app.get('/health', (req, res) => res.status(200).json({ status: 'OK', timestamp: new Date() }));
+
 app.use('/api/admin/actions', require('./routes/actions'));
 
 const PORT = process.env.PORT || process.env.ADMIN_PORT || 4000;
