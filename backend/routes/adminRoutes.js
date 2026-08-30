@@ -5,25 +5,40 @@ const router = express.Router();
 const db = require('../lib/db');
 const { adminAuthMiddleware, getAuthorizedAdminEmails } = require('../lib/adminAuth');
 const { validateBlogSeo } = require('../lib/seoValidator');
-const { publishBlog, logAdminActivity, createBlogRevision, TARGET_DESTINATIONS } = require('../lib/publisher');
+const { publishBlog, logAdminActivity, TARGET_DESTINATIONS } = require('../lib/publisher');
 
-const fs = require('fs');
-const path = require('path');
+const { S3Client, ListObjectsV2Command, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 
-// Auto-initialize admin database tables on load
-async function initAdminTables() {
-  try {
-    const schemaPath = path.join(__dirname, '../database/admin-schema.sql');
-    if (fs.existsSync(schemaPath)) {
-      const sql = fs.readFileSync(schemaPath, 'utf8');
-      await db.query(sql);
-      console.log('[AdminDB] Admin database schema initialized successfully');
-    }
-  } catch (err) {
-    console.warn('[AdminDB] Schema initialization notice:', err.message);
-  }
+// Helper to convert S3 stream to string
+const streamToString = (stream) =>
+  new Promise((resolve, reject) => {
+    const chunks = [];
+    stream.on('data', (chunk) => chunks.push(chunk));
+    stream.on('error', reject);
+    stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+  });
+
+// Configure S3 Client for Cloudflare R2 or AWS S3
+let s3Client = null;
+if (process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY) {
+  s3Client = new S3Client({
+    region: 'auto',
+    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: process.env.R2_ACCESS_KEY_ID,
+      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+    },
+  });
+} else if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+  s3Client = new S3Client({
+    region: process.env.AWS_REGION || 'ap-south-1',
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    },
+  });
 }
-initAdminTables();
+const BUCKET_NAME = (process.env.S3_BLOGS_BUCKET || 'share2me-auto-blogs-prod').replace(/[^a-z0-9-]/g, '');
 
 // Apply admin authorization middleware to ALL /api/admin routes
 router.use(adminAuthMiddleware);
@@ -41,67 +56,116 @@ router.get('/check-auth', (req, res) => {
 // ── 2. List All Blogs (with Search & Status Filter) ───────────────────────────
 router.get('/blogs', async (req, res) => {
   try {
-    const { status, search } = req.query;
-    let queryText = `
-      SELECT b.*, 
-             COALESCE(
-               json_agg(
-                 json_build_object(
-                   'id', r.id,
-                   'destination', r.destination,
-                   'status', r.status,
-                   'publishedUrl', r.published_url,
-                   'publishedAt', r.published_at
-                 )
-               ) FILTER (WHERE r.id IS NOT NULL), '[]'
-             ) AS records
-      FROM admin_blogs b
-      LEFT JOIN admin_publishing_records r ON b.id = r.blog_id
-    `;
-    const params = [];
-    const whereClauses = [];
+    if (!s3Client) {
+      return res.status(500).json({ error: 'S3 Client is not configured. Cannot list blogs.' });
+    }
 
+    const { status, search } = req.query;
+    const listCommand = new ListObjectsV2Command({ Bucket: BUCKET_NAME, Prefix: 'blogs/' });
+    const response = await s3Client.send(listCommand);
+    
+    let blogsList = [];
+
+    if (response.Contents && response.Contents.length > 0) {
+      const files = response.Contents.filter((obj) => obj.Key.endsWith('.json'));
+      
+      const blogsPromises = files.map(async (file) => {
+        try {
+          const getCommand = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: file.Key });
+          const objResponse = await s3Client.send(getCommand);
+          const contentStr = await streamToString(objResponse.Body);
+          const blogData = JSON.parse(contentStr);
+          
+          return {
+            id: blogData.slug,
+            slug: blogData.slug,
+            title: blogData.title,
+            category: blogData.category,
+            status: blogData.status || 'published',
+            updated_at: file.LastModified,
+            destinations: blogData.destinations || [],
+            records: (blogData.destinations || []).map(dest => ({
+              destination: dest,
+              status: blogData.status || 'published'
+            }))
+          };
+        } catch (parseErr) {
+          console.error(`[AdminS3] Failed to parse ${file.Key}:`, parseErr.message);
+          return null;
+        }
+      });
+
+      blogsList = (await Promise.all(blogsPromises)).filter(Boolean);
+    }
+
+    // Apply filtering
     if (status && status !== 'all') {
-      params.push(status);
-      whereClauses.push(`b.status = $${params.length}`);
+      blogsList = blogsList.filter(b => b.status === status);
     }
 
     if (search && search.trim()) {
-      params.push(`%${search.trim().toLowerCase()}%`);
-      whereClauses.push(`(LOWER(b.title) LIKE $${params.length} OR LOWER(b.slug) LIKE $${params.length} OR LOWER(b.category) LIKE $${params.length})`);
+      const q = search.trim().toLowerCase();
+      blogsList = blogsList.filter(b => 
+        (b.title && b.title.toLowerCase().includes(q)) || 
+        (b.slug && b.slug.toLowerCase().includes(q)) || 
+        (b.category && b.category.toLowerCase().includes(q))
+      );
     }
 
-    if (whereClauses.length > 0) {
-      queryText += ` WHERE ${whereClauses.join(' AND ')}`;
-    }
+    // Sort by updated_at descending
+    blogsList.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
 
-    queryText += ` GROUP BY b.id ORDER BY b.updated_at DESC`;
-
-    const result = await db.query(queryText, params);
-    res.json({ blogs: result.rows });
+    res.json({ blogs: blogsList });
   } catch (err) {
-    console.error('[AdminAPI] Failed to fetch blogs:', err);
-    res.status(500).json({ error: 'Failed to retrieve blogs from database.' });
+    console.error('[AdminAPI] Failed to fetch blogs from S3:', err);
+    res.status(500).json({ error: 'Failed to retrieve blogs from S3.' });
   }
 });
 
 // ── 3. Get Single Blog ────────────────────────────────────────────────────────
 router.get('/blogs/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const blogRes = await db.query(`SELECT * FROM admin_blogs WHERE id = $1`, [id]);
-    if (blogRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Blog not found.' });
+    const slug = req.params.id; // slug is passed as id
+    if (!s3Client) return res.status(500).json({ error: 'S3 Client not configured.' });
+
+    try {
+      const getCommand = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: `blogs/${slug}.json` });
+      const objResponse = await s3Client.send(getCommand);
+      const contentStr = await streamToString(objResponse.Body);
+      const blogData = JSON.parse(contentStr);
+
+      // Map S3 JSON to admin format for the frontend editor
+      const blog = {
+        id: blogData.slug,
+        title: blogData.title,
+        slug: blogData.slug,
+        meta_description: blogData.metaDescription || blogData.intro,
+        keywords: blogData.keywords || [],
+        author: blogData.author,
+        featured_image: blogData.featuredImage,
+        canonical_url: blogData.canonicalUrl,
+        category: blogData.category,
+        tags: blogData.tags || [],
+        intro: blogData.intro,
+        sections: blogData.sections || [],
+        conclusion: blogData.conclusion || '',
+        status: blogData.status || 'published',
+      };
+
+      res.json({
+        blog,
+        records: (blogData.destinations || []).map(dest => ({
+          destination: dest,
+          status: blogData.status || 'published'
+        })),
+        revisions: [] // Not supported with native S3
+      });
+    } catch (s3err) {
+      if (s3err.name === 'NoSuchKey') {
+        return res.status(404).json({ error: 'Blog not found.' });
+      }
+      throw s3err;
     }
-
-    const recordsRes = await db.query(`SELECT * FROM admin_publishing_records WHERE blog_id = $1 ORDER BY published_at DESC`, [id]);
-    const revisionsRes = await db.query(`SELECT id, version, created_by, created_at FROM admin_blog_revisions WHERE blog_id = $1 ORDER BY version DESC`, [id]);
-
-    res.json({
-      blog: blogRes.rows[0],
-      records: recordsRes.rows,
-      revisions: revisionsRes.rows,
-    });
   } catch (err) {
     console.error('[AdminAPI] Failed to fetch blog:', err);
     res.status(500).json({ error: 'Failed to fetch blog details.' });
@@ -112,7 +176,7 @@ router.get('/blogs/:id', async (req, res) => {
 router.post('/blogs/draft', async (req, res) => {
   try {
     const {
-      id,
+      id, // This is the old slug from the frontend
       title = 'Untitled Draft',
       slug,
       metaDescription = '',
@@ -122,33 +186,53 @@ router.post('/blogs/draft', async (req, res) => {
       canonicalUrl = '',
       category = 'General',
       tags = [],
-      htmlContent = '',
+      intro = '',
+      sections = [],
+      conclusion = '',
+      destinations = []
     } = req.body;
+
+    if (!s3Client) return res.status(500).json({ error: 'S3 Client not configured.' });
 
     const draftSlug = (slug && slug.trim()) ? slug.trim().toLowerCase() : `draft-${Date.now()}`;
 
-    let blogRecord;
-    if (id) {
-      const updateRes = await db.query(
-        `UPDATE admin_blogs
-         SET title = $1, slug = $2, meta_description = $3, keywords = $4, author = $5,
-             featured_image = $6, canonical_url = $7, category = $8, tags = $9,
-             html_content = $10, status = 'draft', updated_at = NOW()
-         WHERE id = $11
-         RETURNING *`,
-        [title, draftSlug, metaDescription, keywords, author, featuredImage, canonicalUrl, category, tags, htmlContent, id]
-      );
-      blogRecord = updateRes.rows[0];
-    } else {
-      const insertRes = await db.query(
-        `INSERT INTO admin_blogs 
-           (title, slug, meta_description, keywords, author, featured_image, canonical_url, category, tags, html_content, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'draft')
-         RETURNING *`,
-        [title, draftSlug, metaDescription, keywords, author, featuredImage, canonicalUrl, category, tags, htmlContent]
-      );
-      blogRecord = insertRes.rows[0];
+    // If the slug changed, delete the old file
+    if (id && id !== draftSlug) {
+      try {
+        const deleteCommand = new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: `blogs/${id}.json` });
+        await s3Client.send(deleteCommand);
+      } catch (e) {
+        console.warn(`[AdminAPI] Failed to delete old draft file blogs/${id}.json:`, e.message);
+      }
     }
+
+    const blogJson = {
+      title,
+      slug: draftSlug,
+      category,
+      readTime: '5 min read',
+      date: new Date().toISOString(),
+      intro: intro || metaDescription,
+      sections,
+      conclusion,
+      status: 'draft',
+      metaDescription,
+      keywords,
+      author,
+      featuredImage,
+      canonicalUrl,
+      tags,
+      destinations
+    };
+
+    const uploadCommand = new PutObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: `blogs/${draftSlug}.json`,
+      Body: JSON.stringify(blogJson),
+      ContentType: 'application/json',
+    });
+
+    await s3Client.send(uploadCommand);
 
     await logAdminActivity({
       adminEmail: req.adminEmail,
@@ -157,7 +241,7 @@ router.post('/blogs/draft', async (req, res) => {
       status: 'SUCCESS',
     });
 
-    res.json({ message: 'Draft saved successfully.', blog: blogRecord });
+    res.json({ message: 'Draft saved successfully.', blog: { id: draftSlug, slug: draftSlug } });
   } catch (err) {
     console.error('[AdminAPI] Failed to save draft:', err);
     res.status(500).json({ error: `Failed to save draft: ${err.message}` });
@@ -201,16 +285,16 @@ router.post('/blogs/publish', async (req, res) => {
 // ── 7. Delete Blog ────────────────────────────────────────────────────────────
 router.delete('/blogs/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const fetchRes = await db.query(`SELECT title FROM admin_blogs WHERE id = $1`, [id]);
-    const title = fetchRes.rows[0]?.title || id;
+    const slug = req.params.id;
+    if (!s3Client) return res.status(500).json({ error: 'S3 Client not configured.' });
 
-    await db.query(`DELETE FROM admin_blogs WHERE id = $1`, [id]);
+    const deleteCommand = new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: `blogs/${slug}.json` });
+    await s3Client.send(deleteCommand);
 
     await logAdminActivity({
       adminEmail: req.adminEmail,
       action: 'DELETE_BLOG',
-      blogTitle: title,
+      blogTitle: slug,
       status: 'SUCCESS',
     });
 
@@ -224,30 +308,45 @@ router.delete('/blogs/:id', async (req, res) => {
 // ── 8. Duplicate Blog ─────────────────────────────────────────────────────────
 router.post('/blogs/:id/duplicate', async (req, res) => {
   try {
-    const { id } = req.params;
-    const origRes = await db.query(`SELECT * FROM admin_blogs WHERE id = $1`, [id]);
-    if (origRes.rows.length === 0) return res.status(404).json({ error: 'Blog not found' });
+    const slug = req.params.id;
+    if (!s3Client) return res.status(500).json({ error: 'S3 Client not configured.' });
 
-    const orig = origRes.rows[0];
-    const newTitle = `${orig.title} (Copy)`;
-    const newSlug = `${orig.slug}-copy-${Date.now().toString().slice(-4)}`;
+    try {
+      const getCommand = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: `blogs/${slug}.json` });
+      const objResponse = await s3Client.send(getCommand);
+      const contentStr = await streamToString(objResponse.Body);
+      const orig = JSON.parse(contentStr);
 
-    const dupRes = await db.query(
-      `INSERT INTO admin_blogs 
-         (title, slug, meta_description, keywords, author, featured_image, canonical_url, category, tags, html_content, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'draft')
-       RETURNING *`,
-      [newTitle, newSlug, orig.meta_description, orig.keywords, orig.author, orig.featured_image, orig.canonical_url, orig.category, orig.tags, orig.html_content]
-    );
+      const newTitle = `${orig.title} (Copy)`;
+      const newSlug = `${orig.slug}-copy-${Date.now().toString().slice(-4)}`;
 
-    await logAdminActivity({
-      adminEmail: req.adminEmail,
-      action: 'DUPLICATE_BLOG',
-      blogTitle: newTitle,
-      status: 'SUCCESS',
-    });
+      orig.title = newTitle;
+      orig.slug = newSlug;
+      orig.status = 'draft';
 
-    res.json({ message: 'Blog duplicated successfully.', blog: dupRes.rows[0] });
+      const uploadCommand = new PutObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: `blogs/${newSlug}.json`,
+        Body: JSON.stringify(orig),
+        ContentType: 'application/json',
+      });
+
+      await s3Client.send(uploadCommand);
+
+      await logAdminActivity({
+        adminEmail: req.adminEmail,
+        action: 'DUPLICATE_BLOG',
+        blogTitle: newTitle,
+        status: 'SUCCESS',
+      });
+
+      res.json({ message: 'Blog duplicated successfully.', blog: { id: newSlug, slug: newSlug } });
+    } catch (s3err) {
+      if (s3err.name === 'NoSuchKey') {
+        return res.status(404).json({ error: 'Blog not found.' });
+      }
+      throw s3err;
+    }
   } catch (err) {
     console.error('[AdminAPI] Failed to duplicate blog:', err);
     res.status(500).json({ error: 'Failed to duplicate blog.' });
@@ -256,70 +355,12 @@ router.post('/blogs/:id/duplicate', async (req, res) => {
 
 // ── 9. Revisions History & Rollback ──────────────────────────────────────────
 router.get('/blogs/:id/revisions', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const revisionsRes = await db.query(
-      `SELECT id, version, html_content, metadata_snapshot, created_by, created_at
-       FROM admin_blog_revisions
-       WHERE blog_id = $1
-       ORDER BY version DESC`,
-      [id]
-    );
-    res.json({ revisions: revisionsRes.rows });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch revisions.' });
-  }
+  // Revisions are disabled in Native S3 mode
+  res.json({ revisions: [] });
 });
 
 router.post('/blogs/:id/revisions/:version/restore', async (req, res) => {
-  try {
-    const { id, version } = req.params;
-    const revRes = await db.query(
-      `SELECT * FROM admin_blog_revisions WHERE blog_id = $1 AND version = $2`,
-      [id, version]
-    );
-
-    if (revRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Revision not found.' });
-    }
-
-    const rev = revRes.rows[0];
-    const meta = typeof rev.metadata_snapshot === 'string' ? JSON.parse(rev.metadata_snapshot) : rev.metadata_snapshot;
-
-    const restoredRes = await db.query(
-      `UPDATE admin_blogs
-       SET title = $1, meta_description = $2, keywords = $3, author = $4,
-           featured_image = $5, canonical_url = $6, category = $7, tags = $8,
-           html_content = $9, updated_at = NOW()
-       WHERE id = $10
-       RETURNING *`,
-      [
-        meta.title || 'Restored Blog',
-        meta.metaDescription || '',
-        meta.keywords || [],
-        meta.author || 'Share2Me Team',
-        meta.featuredImage || '',
-        meta.canonicalUrl || '',
-        meta.category || 'General',
-        meta.tags || [],
-        rev.html_content,
-        id,
-      ]
-    );
-
-    await logAdminActivity({
-      adminEmail: req.adminEmail,
-      action: 'RESTORE_REVISION',
-      blogTitle: meta.title,
-      status: 'SUCCESS',
-      errorDetails: `Restored to version #${version}`,
-    });
-
-    res.json({ message: `Successfully restored blog to Revision #${version}.`, blog: restoredRes.rows[0] });
-  } catch (err) {
-    console.error('[AdminAPI] Failed to restore revision:', err);
-    res.status(500).json({ error: 'Failed to restore revision.' });
-  }
+  res.status(400).json({ error: 'Revisions are not supported when bypassing Postgres database.' });
 });
 
 // ── 10. Audit Activity Logs ───────────────────────────────────────────────────

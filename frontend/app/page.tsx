@@ -14,15 +14,18 @@ export default function AdminDashboardPage() {
   const { data: session } = useSession();
   const [blogs, setBlogs] = useState<any[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
+  const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [githubTriggerLoading, setGithubTriggerLoading] = useState(false);
 
   useEffect(() => {
     async function fetchDashboardData() {
       try {
         const userEmail = session?.user?.email || "";
-        const [blogsRes, logsRes] = await Promise.all([
+        const [blogsRes, logsRes, statsRes] = await Promise.all([
           fetch("/api/admin/blogs", { headers: { "X-Admin-Email": userEmail } }),
           fetch("/api/admin/logs", { headers: { "X-Admin-Email": userEmail } }),
+          fetch("/api/admin/dashboard/stats", { headers: { "X-Admin-Email": userEmail } }),
         ]);
 
         if (blogsRes.ok) {
@@ -32,6 +35,10 @@ export default function AdminDashboardPage() {
         if (logsRes.ok) {
           const data = await logsRes.json();
           setLogs((data.logs || []).slice(0, 5));
+        }
+        if (statsRes.ok) {
+          const data = await statsRes.json();
+          setStats(data);
         }
       } catch (err) {
         console.error("Dashboard data fetch error:", err);
@@ -44,6 +51,27 @@ export default function AdminDashboardPage() {
       fetchDashboardData();
     }
   }, [session]);
+
+  const handleTriggerGitHub = async () => {
+    setGithubTriggerLoading(true);
+    try {
+      const userEmail = session?.user?.email || "";
+      const res = await fetch("/api/admin/actions/trigger-github", {
+        method: "POST",
+        headers: { "X-Admin-Email": userEmail },
+      });
+      if (res.ok) {
+        alert("GitHub Action triggered successfully! The new blog will be generated shortly.");
+      } else {
+        const error = await res.json();
+        alert(`Failed to trigger: ${error.error}`);
+      }
+    } catch (err) {
+      alert("Error triggering GitHub Action");
+    } finally {
+      setGithubTriggerLoading(false);
+    }
+  };
 
   const totalBlogs = blogs.length;
   const publishedBlogs = blogs.filter((b) => b.status === "published").length;
@@ -69,7 +97,7 @@ export default function AdminDashboardPage() {
 
         <div className="flex items-center gap-3 z-10">
           <Link
-            href="/admin/blogs/editor"
+            href="/blogs/editor"
             className="bg-[#0f1015] text-white font-extrabold px-7 py-4 rounded-full hover:bg-[#1f232c] transition-all flex items-center gap-2 shadow-xl hover:scale-[1.02] text-sm shrink-0"
           >
             <PlusCircle className="w-4 h-4 text-[#fcd535]" />
@@ -120,16 +148,48 @@ export default function AdminDashboardPage() {
           <div className="text-xs font-medium text-[#64748b]">Work in progress</div>
         </div>
 
-        {/* Target Domains */}
+        {/* Platform Users */}
         <div className="bg-white/70 backdrop-blur-2xl border border-white/80 rounded-[32px] p-6 space-y-3 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between text-[#64748b]">
-            <span className="text-xs font-extrabold uppercase tracking-wider">Publish Targets</span>
+            <span className="text-xs font-extrabold uppercase tracking-wider">Total Vendors</span>
             <div className="w-9 h-9 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
               <Globe className="w-5 h-5" />
             </div>
           </div>
-          <div className="text-3xl font-black text-[#0f1015]">2 Domains</div>
-          <div className="text-xs font-bold text-purple-700 font-mono">share2.me & share2me.in</div>
+          <div className="text-4xl font-black text-[#0f1015]">
+            {stats ? stats.metrics.totalVendors : "-"}
+          </div>
+          <div className="text-xs font-medium text-[#64748b]">Registered Print Shops</div>
+        </div>
+        
+        {/* Total Transfers */}
+        <div className="bg-white/70 backdrop-blur-2xl border border-white/80 rounded-[32px] p-6 space-y-3 shadow-sm hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between text-[#64748b]">
+            <span className="text-xs font-extrabold uppercase tracking-wider">Files Transferred</span>
+            <div className="w-9 h-9 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
+              <FileText className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="text-4xl font-black text-indigo-600">
+            {stats ? stats.metrics.totalFiles : "-"}
+          </div>
+          <div className="text-xs font-medium text-[#64748b]">Total files processed</div>
+        </div>
+
+        {/* Print Jobs */}
+        <div className="bg-white/70 backdrop-blur-2xl border border-white/80 rounded-[32px] p-6 space-y-3 shadow-sm hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between text-[#64748b]">
+            <span className="text-xs font-extrabold uppercase tracking-wider">Print Shop Jobs</span>
+            <div className="w-9 h-9 rounded-2xl bg-pink-100 text-pink-700 flex items-center justify-center font-bold">
+              <Sparkles className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="text-4xl font-black text-pink-600">
+            {stats ? stats.metrics.totalPrintJobs : "-"}
+          </div>
+          <div className="text-xs font-medium text-[#64748b]">
+            Revenue: ₹{stats ? stats.metrics.totalRevenue.toFixed(2) : "0.00"}
+          </div>
         </div>
 
       </div>
@@ -145,7 +205,7 @@ export default function AdminDashboardPage() {
               <span>Recent Articles</span>
             </h2>
             <Link
-              href="/admin/blogs"
+              href="/blogs"
               className="text-xs font-extrabold text-[#0f1015] hover:text-purple-600 flex items-center gap-1 bg-white/90 border border-white px-3 py-1.5 rounded-full shadow-xs"
             >
               <span>View All</span>
@@ -159,7 +219,7 @@ export default function AdminDashboardPage() {
             <div className="py-12 text-center text-[#64748b] space-y-3">
               <p className="text-sm font-medium">No blog articles created yet.</p>
               <Link
-                href="/admin/blogs/editor"
+                href="/blogs/editor"
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#0f1015] text-white font-extrabold text-xs shadow-md"
               >
                 Create First Blog
@@ -189,7 +249,7 @@ export default function AdminDashboardPage() {
                   </div>
 
                   <Link
-                    href={`/admin/blogs/editor?id=${blog.id}`}
+                    href={`/blogs/editor?id=${blog.id}`}
                     className="px-4 py-2 rounded-full bg-[#0f1015] text-white hover:bg-[#1f232c] text-xs font-extrabold transition-all shrink-0 shadow-sm"
                   >
                     Edit
@@ -208,7 +268,7 @@ export default function AdminDashboardPage() {
               <span>Activity Log</span>
             </h2>
             <Link
-              href="/admin/logs"
+              href="/logs"
               className="text-xs font-extrabold text-[#0f1015] hover:text-blue-600"
             >
               Logs
@@ -237,6 +297,40 @@ export default function AdminDashboardPage() {
           )}
         </div>
 
+      </div>
+
+      {/* ── System Controls ──────────────────────────────────────────────── */}
+      <div className="bg-white/80 backdrop-blur-3xl border border-white/90 rounded-[36px] p-7 space-y-6 shadow-sm">
+        <div className="flex items-center justify-between border-b border-slate-200/80 pb-4">
+          <h2 className="text-xl font-extrabold text-[#0f1015] flex items-center gap-2.5">
+            <Globe className="w-5 h-5 text-indigo-600" />
+            <span>System Controls</span>
+          </h2>
+        </div>
+        
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+          <div>
+            <h3 className="font-extrabold text-[#0f1015] mb-1">AI Auto-Blog Generation</h3>
+            <p className="text-sm text-[#64748b]">Trigger the GitHub Action workflow to scrape trending news and generate a new blog article on Share2Me.</p>
+          </div>
+          <button 
+            onClick={handleTriggerGitHub}
+            disabled={githubTriggerLoading}
+            className="bg-[#0f1015] text-white font-extrabold px-6 py-3 rounded-full hover:bg-[#1f232c] transition-all flex items-center gap-2 shadow-md disabled:opacity-50 shrink-0"
+          >
+            {githubTriggerLoading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span>Triggering...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4 text-[#fcd535]" />
+                <span>Generate Auto-Blog</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
     </div>

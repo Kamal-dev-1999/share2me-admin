@@ -7,13 +7,14 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import {
   FileText, Search, PlusCircle, Edit3, Copy, Trash2,
-  AlertCircle, RefreshCw
+  AlertCircle, RefreshCw, Sparkles, Loader2
 } from "lucide-react";
 
 export default function AdminBlogsPage() {
   const { data: session } = useSession();
   const [blogs, setBlogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [triggeringAction, setTriggeringAction] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [actionMessage, setActionMessage] = useState("");
@@ -35,7 +36,7 @@ export default function AdminBlogsPage() {
       }
     } catch (err) {
       console.error("Failed to fetch blogs:", err);
-    } fontally {
+    } finally {
       setLoading(false);
     }
   };
@@ -84,6 +85,29 @@ export default function AdminBlogsPage() {
     }
   };
 
+  const handleTriggerAutoBlog = async () => {
+    if (!session?.user?.email) return;
+    setTriggeringAction(true);
+    setActionMessage("");
+    try {
+      const res = await fetch("/api/admin/actions/trigger-github", {
+        method: "POST",
+        headers: { "X-Admin-Email": session.user.email },
+      });
+      if (res.ok) {
+        setActionMessage("GitHub Action triggered successfully! A new blog will be generated and uploaded shortly.");
+        setTimeout(() => setActionMessage(""), 5000);
+      } else {
+        const errData = await res.json();
+        alert(`Failed to trigger: ${errData.error || res.statusText}`);
+      }
+    } catch (err) {
+      alert("Network error while triggering auto blog.");
+    } finally {
+      setTriggeringAction(false);
+    }
+  };
+
   return (
     <div className="p-6 md:p-10 space-y-6 max-w-7xl mx-auto font-sans">
       
@@ -99,13 +123,24 @@ export default function AdminBlogsPage() {
           </p>
         </div>
 
-        <Link
-          href="/admin/blogs/editor"
-          className="bg-[#0f1015] text-white font-extrabold px-6 py-3.5 rounded-full hover:bg-[#1f232c] transition-all flex items-center justify-center gap-2 shadow-xl hover:scale-[1.02] text-sm shrink-0"
-        >
-          <PlusCircle className="w-4 h-4 text-[#fcd535]" />
-          <span>Create New Blog</span>
-        </Link>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleTriggerAutoBlog}
+            disabled={triggeringAction}
+            className="bg-purple-600/10 text-purple-600 border border-purple-600/20 font-extrabold px-6 py-3.5 rounded-full hover:bg-purple-600/20 transition-all flex items-center justify-center gap-2 shadow-sm hover:scale-[1.02] text-sm shrink-0 disabled:opacity-50 disabled:hover:scale-100"
+          >
+            {triggeringAction ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            <span>{triggeringAction ? "Triggering..." : "Auto-Generate"}</span>
+          </button>
+          
+          <Link
+            href="/blogs/editor"
+            className="bg-[#0f1015] text-white font-extrabold px-6 py-3.5 rounded-full hover:bg-[#1f232c] transition-all flex items-center justify-center gap-2 shadow-xl hover:scale-[1.02] text-sm shrink-0"
+          >
+            <PlusCircle className="w-4 h-4 text-[#fcd535]" />
+            <span>Create New Blog</span>
+          </Link>
+        </div>
       </div>
 
       {/* Notification Toast */}
@@ -175,7 +210,7 @@ export default function AdminBlogsPage() {
             <AlertCircle className="w-9 h-9 text-[#64748b] mx-auto opacity-40" />
             <p className="text-sm font-medium">No blog articles match the current filter.</p>
             <Link
-              href="/admin/blogs/editor"
+              href="/blogs/editor"
               className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-[#0f1015] text-white font-extrabold text-xs shadow-md"
             >
               Create New Article
@@ -204,7 +239,7 @@ export default function AdminBlogsPage() {
                       <td className="py-4 px-6 min-w-[280px]">
                         <div className="space-y-1">
                           <Link
-                            href={`/admin/blogs/editor?id=${blog.id}`}
+                            href={`/blogs/editor?id=${blog.id}`}
                             className="font-extrabold text-[#0f1015] hover:text-purple-600 transition-colors block text-base"
                           >
                             {blog.title}
@@ -265,7 +300,7 @@ export default function AdminBlogsPage() {
                       <td className="py-4 px-6 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-2">
                           <Link
-                            href={`/admin/blogs/editor?id=${blog.id}`}
+                            href={`/blogs/editor?id=${blog.id}`}
                             className="p-2.5 rounded-2xl bg-white border border-slate-200/80 text-[#0f1015] hover:bg-[#0f1015] hover:text-white transition-colors shadow-xs"
                             title="Edit Article"
                           >

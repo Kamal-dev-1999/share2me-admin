@@ -61,7 +61,7 @@ export default function AdminLoginPage() {
               </div>
 
               <Link
-                href="/admin"
+                href="/"
                 className="w-full bg-[#0f1015] text-white font-extrabold py-4 px-6 rounded-full hover:bg-[#1f232c] transition-all flex items-center justify-center gap-2 shadow-xl hover:scale-[1.02] text-sm"
               >
                 <span>Enter Admin Dashboard</span>
@@ -69,7 +69,7 @@ export default function AdminLoginPage() {
               </Link>
 
               <button
-                onClick={() => signOut({ callbackUrl: "/admin/login" })}
+                onClick={() => signOut({ callbackUrl: "/login" })}
                 className="w-full bg-white/80 border border-white/90 text-[#5c6578] hover:text-[#0f1015] py-3 px-4 rounded-full text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2"
               >
                 <LogOut className="w-4 h-4" />
@@ -92,7 +92,7 @@ export default function AdminLoginPage() {
               </div>
 
               <button
-                onClick={() => signOut({ callbackUrl: "/admin/login" })}
+                onClick={() => signOut({ callbackUrl: "/login" })}
                 className="w-full bg-rose-600 text-white font-extrabold py-3.5 px-4 rounded-full hover:bg-rose-700 transition-all flex items-center justify-center gap-2 text-xs shadow-lg"
               >
                 <LogOut className="w-4 h-4" />
@@ -103,7 +103,7 @@ export default function AdminLoginPage() {
         ) : (
           <div className="space-y-5">
             <button
-              onClick={() => signIn("google", { callbackUrl: "/admin" })}
+              onClick={() => signIn("google", { callbackUrl: "/" })}
               className="w-full bg-[#0f1015] text-white font-extrabold py-4 px-6 rounded-full hover:bg-[#1f232c] transition-all flex items-center justify-center gap-3 shadow-xl hover:scale-[1.02] text-sm group"
             >
               <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">

@@ -1,0 +1,21 @@
+{
+  "name": "share2me-admin-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.4.0",
+    "@types/react": "^19.2.18",
+    "autoprefixer": "^10.5.4",
+    "postcss": "^8.5.26",
+    "tailwindcss": "^4.3.3",
+    "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "lucide-react": "^1.37.0",
+    "next": "^16.3.3",
+    "next-auth": "^4.24.15",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  }
+}

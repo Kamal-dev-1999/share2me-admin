@@ -2,11 +2,29 @@
 
 const db = require('./db');
 const { validateBlogSeo } = require('./seoValidator');
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 
-/**
- * Modular Multi-Site Publishing Adapter
- * Handles publication to share2.me, share2me.in, or future target destinations.
- */
+// Configure S3 Client for Cloudflare R2 or AWS S3
+let s3Client = null;
+if (process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY) {
+  s3Client = new S3Client({
+    region: 'auto',
+    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: process.env.R2_ACCESS_KEY_ID,
+      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+    },
+  });
+} else if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+  s3Client = new S3Client({
+    region: process.env.AWS_REGION || 'ap-south-1',
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    },
+  });
+}
+const BUCKET_NAME = (process.env.S3_BLOGS_BUCKET || 'share2me-auto-blogs-prod').replace(/[^a-z0-9-]/g, '');
 
 const TARGET_DESTINATIONS = {
   share2me: {
@@ -33,36 +51,54 @@ async function logAdminActivity({ adminEmail, action, blogTitle, destination, st
   }
 }
 
-async function createBlogRevision(blogId, htmlContent, metadataSnapshot, adminEmail) {
-  try {
-    const res = await db.query(
-      `SELECT COALESCE(MAX(version), 0) + 1 AS next_version FROM admin_blog_revisions WHERE blog_id = $1`,
-      [blogId]
-    );
-    const nextVersion = res.rows[0].next_version;
-
-    await db.query(
-      `INSERT INTO admin_blog_revisions (blog_id, version, html_content, metadata_snapshot, created_by)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [blogId, nextVersion, htmlContent, JSON.stringify(metadataSnapshot), adminEmail]
-    );
-    return nextVersion;
-  } catch (err) {
-    console.error('[Revision] Failed to create blog revision:', err.message);
-    return 1;
-  }
-}
-
-async function publishSingleDestination(destinationKey, blog, adminEmail) {
+async function publishSingleDestination(destinationKey, blogData, adminEmail) {
   const targetConfig = TARGET_DESTINATIONS[destinationKey];
   if (!targetConfig) {
     throw new Error(`Unknown publishing destination: "${destinationKey}"`);
   }
 
   const deployToken = process.env[targetConfig.tokenEnv] || 'default_server_deploy_token';
-  const publishedUrl = `${targetConfig.domain}/blog/${blog.slug}`;
+  const publishedUrl = `${targetConfig.domain}/blog/${blogData.slug}`;
 
-  // Perform backend deployment API ping / webhook trigger if webhook URL is configured
+  // 1. Direct Upload to S3/R2
+  if (s3Client) {
+    try {
+      const blogJson = {
+        title: blogData.title,
+        category: blogData.category || 'General',
+        readTime: '5 min read',
+        date: new Date().toISOString(),
+        intro: blogData.intro || blogData.metaDescription || 'A brief introduction to the article.',
+        sections: blogData.sections || [],
+        conclusion: blogData.conclusion || '',
+        status: 'published',
+        metaDescription: blogData.metaDescription,
+        keywords: blogData.keywords,
+        author: blogData.author,
+        featuredImage: blogData.featuredImage,
+        canonicalUrl: blogData.canonicalUrl,
+        slug: blogData.slug,
+        destinations: blogData.destinations || [] // track where it was published
+      };
+
+      const uploadCommand = new PutObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: `blogs/${blogData.slug}.json`,
+        Body: JSON.stringify(blogJson),
+        ContentType: 'application/json',
+      });
+
+      await s3Client.send(uploadCommand);
+      console.log(`[Publish:${destinationKey}] Successfully uploaded ${blogData.slug}.json to S3/R2`);
+    } catch (err) {
+      console.error(`[Publish:${destinationKey}] Direct S3/R2 upload failed:`, err.message);
+      throw new Error(`S3 Upload failed: ${err.message}`);
+    }
+  } else {
+    throw new Error(`[Publish:${destinationKey}] S3 Client is not configured. Cannot publish.`);
+  }
+
+  // 2. Perform backend deployment API ping / webhook trigger if webhook URL is configured
   const webhookUrlEnv = `DEPLOY_WEBHOOK_${destinationKey.toUpperCase()}`;
   const webhookUrl = process.env[webhookUrlEnv];
 
@@ -76,8 +112,8 @@ async function publishSingleDestination(destinationKey, blog, adminEmail) {
         },
         body: JSON.stringify({
           action: 'PUBLISH_BLOG',
-          slug: blog.slug,
-          title: blog.title,
+          slug: blogData.slug,
+          title: blogData.title,
           url: publishedUrl,
           timestamp: new Date().toISOString(),
         }),
@@ -91,17 +127,10 @@ async function publishSingleDestination(destinationKey, blog, adminEmail) {
     }
   }
 
-  // Record publishing result in database
-  await db.query(
-    `INSERT INTO admin_publishing_records (blog_id, destination, status, published_url, published_at)
-     VALUES ($1, $2, $3, $4, NOW())`,
-    [blog.id, destinationKey, 'published', publishedUrl]
-  );
-
   await logAdminActivity({
     adminEmail,
     action: 'PUBLISH_BLOG',
-    blogTitle: blog.title,
+    blogTitle: blogData.title,
     destination: targetConfig.label,
     status: 'SUCCESS',
   });
@@ -126,57 +155,32 @@ async function publishBlog(destinations, blogData, adminEmail) {
     throw new Error(`SEO Validation Failed: ${errorMsgs}`);
   }
 
-  const {
-    id,
-    title,
-    slug,
-    metaDescription,
-    keywords = [],
-    author = 'Share2Me Team',
-    featuredImage,
-    canonicalUrl,
-    category = 'General',
-    tags = [],
-    htmlContent,
-  } = blogData;
-
-  // 2. Upsert blog into database
-  let blogId = id;
-  let blogRecord;
-
-  if (blogId) {
-    const updateRes = await db.query(
-      `UPDATE admin_blogs
-       SET title = $1, slug = $2, meta_description = $3, keywords = $4, author = $5,
-           featured_image = $6, canonical_url = $7, category = $8, tags = $9,
-           html_content = $10, status = 'published', updated_at = NOW(), published_at = COALESCE(published_at, NOW())
-       WHERE id = $11
-       RETURNING *`,
-      [title, slug, metaDescription, keywords, author, featuredImage, canonicalUrl, category, tags, htmlContent, blogId]
-    );
-    blogRecord = updateRes.rows[0];
+  // Set destinations property on blogData so it gets saved to S3
+  blogData.destinations = destinations;
+  // Ensure slug exists
+  const oldSlug = blogData.id;
+  if (!blogData.slug || !blogData.slug.trim()) {
+    blogData.slug = `blog-${Date.now()}`;
   } else {
-    const insertRes = await db.query(
-      `INSERT INTO admin_blogs 
-         (title, slug, meta_description, keywords, author, featured_image, canonical_url, category, tags, html_content, status, published_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'published', NOW())
-       RETURNING *`,
-      [title, slug, metaDescription, keywords, author, featuredImage, canonicalUrl, category, tags, htmlContent]
-    );
-    blogRecord = insertRes.rows[0];
-    blogId = blogRecord.id;
+    blogData.slug = blogData.slug.trim().toLowerCase();
   }
 
-  // 3. Save Revision Snapshot
-  await createBlogRevision(blogId, htmlContent, blogData, adminEmail);
+  if (oldSlug && oldSlug !== blogData.slug && s3Client) {
+    try {
+      const deleteCommand = new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: `blogs/${oldSlug}.json` });
+      await s3Client.send(deleteCommand);
+    } catch (e) {
+      console.warn(`[Publishing] Failed to delete old blog file blogs/${oldSlug}.json:`, e.message);
+    }
+  }
 
-  // 4. Publish to each selected target destination
+  // 2. Publish to each selected target destination
   const results = [];
   const failures = [];
 
   for (const dest of destinations) {
     try {
-      const res = await publishSingleDestination(dest, blogRecord, adminEmail);
+      const res = await publishSingleDestination(dest, blogData, adminEmail);
       results.push(res);
     } catch (err) {
       console.error(`[Publishing] Failed to publish to ${dest}:`, err.message);
@@ -187,16 +191,10 @@ async function publishBlog(destinations, blogData, adminEmail) {
         error: err.message,
       });
 
-      await db.query(
-        `INSERT INTO admin_publishing_records (blog_id, destination, status, error_message, published_at)
-         VALUES ($1, $2, $3, $4, NOW())`,
-        [blogId, dest, 'failed', err.message]
-      );
-
       await logAdminActivity({
         adminEmail,
         action: 'PUBLISH_BLOG',
-        blogTitle: title,
+        blogTitle: blogData.title,
         destination: dest,
         status: 'FAILED',
         errorDetails: err.message,
@@ -205,7 +203,7 @@ async function publishBlog(destinations, blogData, adminEmail) {
   }
 
   return {
-    blog: blogRecord,
+    blog: blogData,
     results,
     failures,
     hasFailures: failures.length > 0,
@@ -215,6 +213,5 @@ async function publishBlog(destinations, blogData, adminEmail) {
 module.exports = {
   publishBlog,
   logAdminActivity,
-  createBlogRevision,
   TARGET_DESTINATIONS,
 };

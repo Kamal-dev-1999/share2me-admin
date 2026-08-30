@@ -4,8 +4,8 @@
   "description": "Share2Me Multi-Site Admin & Blog Publishing Portal",
   "main": "backend/routes/adminRoutes.js",
   "scripts": {
-    "dev:frontend": "cd frontend && npm run dev",
-    "dev:backend": "node backend/routes/adminRoutes.js"
+    "dev:frontend": "cd frontend && npx next dev -p 3005",
+    "dev:backend": "node backend/server.js"
   },
   "keywords": [
     "admin-portal",
@@ -17,6 +17,10 @@
   "author": "Share2Me Team",
   "license": "MIT",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1121.0",
+    "@types/node": "^26.4.0",
+    "@types/react": "^19.2.18",
+    "dotenv": "^17.4.2",
     "express": "^4.19.2",
     "lucide-react": "^0.380.0",
     "next": "^14.2.3",
@@ -24,5 +28,8 @@
     "pg": "^8.11.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
   }
 }

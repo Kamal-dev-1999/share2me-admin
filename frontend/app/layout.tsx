@@ -12,20 +12,22 @@ import {
 import { useState } from "react";
 
 const NAV_ITEMS = [
-  { href: "/admin",             icon: LayoutDashboard, label: "Dashboard" },
-  { href: "/admin/blogs",        icon: FileText,        label: "Blogs" },
-  { href: "/admin/blogs/editor", icon: PlusCircle,      label: "Create Blog" },
-  { href: "/admin/revisions",    icon: History,         label: "Revisions" },
-  { href: "/admin/logs",         icon: ScrollText,      label: "Publishing Logs" },
+  { href: "/",             icon: LayoutDashboard, label: "Dashboard" },
+  { href: "/blogs",        icon: FileText,        label: "Blogs" },
+  { href: "/blogs/editor", icon: PlusCircle,      label: "Create Blog" },
+  { href: "/revisions",    icon: History,         label: "Revisions" },
+  { href: "/logs",         icon: ScrollText,      label: "Publishing Logs" },
 ];
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+import { SessionProvider } from "next-auth/react";
+import "./globals.css";
+function AdminLayoutContent({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Skip layout wrap for login page
-  if (pathname === "/admin/login") {
+  if (pathname === "/admin/login" || pathname === "/login") {
     return <>{children}</>;
   }
 
@@ -58,7 +60,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </p>
           </div>
           <Link
-            href="/admin/login"
+            href="/login"
             className="block w-full bg-[#0f1015] text-white font-extrabold py-4 px-6 rounded-full hover:bg-[#1f232c] transition-all shadow-xl text-sm"
           >
             Go to Admin Login
@@ -86,7 +88,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </p>
           </div>
           <button
-            onClick={() => signOut({ callbackUrl: "/admin/login" })}
+            onClick={() => signOut({ callbackUrl: "/login" })}
             className="w-full bg-[#0f1015] text-white font-extrabold py-3.5 px-6 rounded-full hover:bg-[#1f232c] transition-all flex items-center justify-center gap-2 text-sm shadow-lg"
           >
             <LogOut className="w-4 h-4" />
@@ -121,7 +123,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <nav className="space-y-2">
             {NAV_ITEMS.map((item) => {
               const Icon = item.icon;
-              const isActive = pathname === item.href || (item.href !== "/admin" && pathname.startsWith(item.href));
+              const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
 
               return (
                 <Link
@@ -157,7 +159,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
 
           <button
-            onClick={() => signOut({ callbackUrl: "/admin/login" })}
+            onClick={() => signOut({ callbackUrl: "/login" })}
             className="w-full bg-white/80 border border-white text-rose-600 hover:bg-rose-50 font-extrabold py-3 px-4 rounded-2xl transition-all flex items-center justify-center gap-2 text-xs shadow-xs"
           >
             <LogOut className="w-4 h-4" />
@@ -212,7 +214,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </nav>
 
           <button
-            onClick={() => signOut({ callbackUrl: "/admin/login" })}
+            onClick={() => signOut({ callbackUrl: "/login" })}
             className="w-full bg-rose-50 text-rose-600 font-extrabold py-3 px-4 rounded-2xl flex items-center justify-center gap-2 text-xs"
           >
             <LogOut className="w-4 h-4" />
@@ -227,5 +229,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </main>
 
     </div>
+  );
+}
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        <SessionProvider>
+          <AdminLayoutContent>{children}</AdminLayoutContent>
+        </SessionProvider>
+      </body>
+    </html>
   );
 }
