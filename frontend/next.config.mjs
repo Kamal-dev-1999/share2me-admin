@@ -1,10 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   async rewrites() {
+    const apiDest = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/admin';
     return [
       {
         source: '/api/admin/:path*',
-        destination: 'http://localhost:4000/api/admin/:path*',
+        destination: `${apiDest}/:path*`,
       },
     ];
   },
