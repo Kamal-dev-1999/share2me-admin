@@ -24,7 +24,7 @@ const handler = NextAuth({
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
     }),
   ],
-  secret: process.env.AUTH_JWT_SECRET || process.env.AUTH_SECRET,
+  secret: process.env.AUTH_JWT_SECRET || process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET,
   callbacks: {
     async signIn({ user }) {
       const email = user.email?.toLowerCase();
@@ -35,9 +35,20 @@ const handler = NextAuth({
       }
       return true; // Allow access
     },
+    async jwt({ token, user }) {
+      if (user?.email) {
+        token.email = user.email;
+      }
+      const allowed = getAllowedEmails();
+      const email = (token.email || "").toString().toLowerCase();
+      token.adminAuthorized = email ? allowed.includes(email) : false;
+      return token;
+    },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as any).adminAuthorized = true;
+        const allowed = getAllowedEmails();
+        const email = (session.user.email || token.email || "").toString().toLowerCase();
+        (session.user as any).adminAuthorized = email ? allowed.includes(email) : false;
       }
       return session;
     },
