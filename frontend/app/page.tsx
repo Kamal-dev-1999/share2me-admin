@@ -7,8 +7,27 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import {
   FileText, PlusCircle, Globe, History, CheckCircle2,
-  Clock, ArrowUpRight, Sparkles
+  Clock, ArrowUpRight, Sparkles, Send, HardDrive,
+  Layers, IndianRupee, ShieldCheck, Activity, FileSpreadsheet,
+  FileCode, Image as ImageIcon, Store
 } from "lucide-react";
+
+function formatBytes(bytes: number | string | null | undefined): string {
+  const num = typeof bytes === "string" ? parseInt(bytes, 10) : bytes;
+  if (!num || isNaN(num) || num <= 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(num) / Math.log(k));
+  return `${parseFloat((num / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+
+function getFileIcon(mime: string = "") {
+  if (mime.includes("pdf")) return <FileText className="w-4 h-4 text-rose-500" />;
+  if (mime.includes("word") || mime.includes("doc")) return <FileText className="w-4 h-4 text-blue-500" />;
+  if (mime.includes("image")) return <ImageIcon className="w-4 h-4 text-purple-500" />;
+  if (mime.includes("csv") || mime.includes("excel") || mime.includes("sheet")) return <FileSpreadsheet className="w-4 h-4 text-emerald-500" />;
+  return <FileCode className="w-4 h-4 text-slate-500" />;
+}
 
 export default function AdminDashboardPage() {
   const { data: session } = useSession();
@@ -22,10 +41,12 @@ export default function AdminDashboardPage() {
     async function fetchDashboardData() {
       try {
         const userEmail = session?.user?.email || "";
+        const headers = { "X-Admin-Email": userEmail };
+
         const [blogsRes, logsRes, statsRes] = await Promise.all([
-          fetch("/api/admin/blogs", { headers: { "X-Admin-Email": userEmail } }),
-          fetch("/api/admin/logs", { headers: { "X-Admin-Email": userEmail } }),
-          fetch("/api/admin/dashboard/stats", { headers: { "X-Admin-Email": userEmail } }),
+          fetch("/api/admin/blogs", { headers }),
+          fetch("/api/admin/logs", { headers }),
+          fetch("/api/admin/dashboard/stats", { headers }),
         ]);
 
         if (blogsRes.ok) {
@@ -77,21 +98,25 @@ export default function AdminDashboardPage() {
   const publishedBlogs = blogs.filter((b) => b.status === "published").length;
   const draftBlogs = blogs.filter((b) => b.status === "draft").length;
 
+  const transfers = stats?.transfers || {};
+  const recentTransfers = stats?.recentTransfers || [];
+  const fileTypes = stats?.fileTypes || [];
+
   return (
-    <div className="p-6 md:p-10 space-y-8 max-w-7xl mx-auto font-sans">
+    <div className="p-6 md:p-10 space-y-10 max-w-7xl mx-auto font-sans">
       
-      {/* ── Welcome Banner Card ───────────────────────────────────────────── */}
+      {/* ── 1. Welcome Banner Card ────────────────────────────────────────── */}
       <div className="bg-white/80 backdrop-blur-3xl border border-white/90 rounded-[36px] p-8 md:p-10 shadow-[0_20px_60px_rgba(31,18,60,0.08)] relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
         <div className="space-y-3 z-10">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#0f1015] text-[#fcd535] text-xs font-black uppercase tracking-wider shadow-md">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>Control Center</span>
+            <span>Admin Control Center</span>
           </div>
           <h1 className="text-3xl md:text-4xl font-black text-[#0f1015] tracking-tight">
             Welcome back, <span className="text-purple-600">{session?.user?.name || "Admin"}</span>
           </h1>
           <p className="text-sm font-medium text-[#5c6578] max-w-xl leading-relaxed">
-            Publish HTML blogs directly to <strong className="text-[#0f1015]">share2.me</strong> and <strong className="text-[#0f1015]">share2me.in</strong> with live sandboxed preview and automated SEO validation.
+            Monitor real-time file transfer telemetry, manage print shop operations, and publish verified articles to <strong className="text-[#0f1015]">share2.me</strong> and <strong className="text-[#0f1015]">share2me.in</strong>.
           </p>
         </div>
 
@@ -109,202 +134,408 @@ export default function AdminDashboardPage() {
         <div className="absolute right-[-10%] top-[-20%] w-80 h-80 bg-purple-300/30 rounded-full blur-[100px] pointer-events-none" />
       </div>
 
-      {/* ── Metric Cards Grid ─────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        
-        {/* Total Articles */}
-        <div className="bg-white/70 backdrop-blur-2xl border border-white/80 rounded-[32px] p-6 space-y-3 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between text-[#64748b]">
-            <span className="text-xs font-extrabold uppercase tracking-wider">Total Articles</span>
-            <div className="w-9 h-9 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold">
-              <FileText className="w-5 h-5" />
+      {/* ── 2. Private File Transfer & Storage Telemetry ───────────────────── */}
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/60 text-emerald-700 text-[11px] font-black uppercase tracking-wider mb-1.5">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Private Database Telemetry</span>
             </div>
-          </div>
-          <div className="text-4xl font-black text-[#0f1015]">{totalBlogs}</div>
-          <div className="text-xs font-medium text-[#64748b]">Across all target sites</div>
-        </div>
-
-        {/* Published */}
-        <div className="bg-white/70 backdrop-blur-2xl border border-white/80 rounded-[32px] p-6 space-y-3 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between text-[#64748b]">
-            <span className="text-xs font-extrabold uppercase tracking-wider">Published</span>
-            <div className="w-9 h-9 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
-              <CheckCircle2 className="w-5 h-5" />
-            </div>
-          </div>
-          <div className="text-4xl font-black text-emerald-600">{publishedBlogs}</div>
-          <div className="text-xs font-medium text-[#64748b]">Live on websites</div>
-        </div>
-
-        {/* Drafts */}
-        <div className="bg-white/70 backdrop-blur-2xl border border-white/80 rounded-[32px] p-6 space-y-3 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between text-[#64748b]">
-            <span className="text-xs font-extrabold uppercase tracking-wider">Drafts</span>
-            <div className="w-9 h-9 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
-              <Clock className="w-5 h-5" />
-            </div>
-          </div>
-          <div className="text-4xl font-black text-amber-600">{draftBlogs}</div>
-          <div className="text-xs font-medium text-[#64748b]">Work in progress</div>
-        </div>
-
-        {/* Platform Users */}
-        <div className="bg-white/70 backdrop-blur-2xl border border-white/80 rounded-[32px] p-6 space-y-3 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between text-[#64748b]">
-            <span className="text-xs font-extrabold uppercase tracking-wider">Total Vendors</span>
-            <div className="w-9 h-9 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
-              <Globe className="w-5 h-5" />
-            </div>
-          </div>
-          <div className="text-4xl font-black text-[#0f1015]">
-            {stats ? stats.metrics.totalVendors : "-"}
-          </div>
-          <div className="text-xs font-medium text-[#64748b]">Registered Print Shops</div>
-        </div>
-        
-        {/* Total Transfers */}
-        <div className="bg-white/70 backdrop-blur-2xl border border-white/80 rounded-[32px] p-6 space-y-3 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between text-[#64748b]">
-            <span className="text-xs font-extrabold uppercase tracking-wider">Files Transferred</span>
-            <div className="w-9 h-9 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
-              <FileText className="w-5 h-5" />
-            </div>
-          </div>
-          <div className="text-4xl font-black text-indigo-600">
-            {stats ? stats.metrics.totalFiles : "-"}
-          </div>
-          <div className="text-xs font-medium text-[#64748b]">Total files processed</div>
-        </div>
-
-        {/* Print Jobs */}
-        <div className="bg-white/70 backdrop-blur-2xl border border-white/80 rounded-[32px] p-6 space-y-3 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between text-[#64748b]">
-            <span className="text-xs font-extrabold uppercase tracking-wider">Print Shop Jobs</span>
-            <div className="w-9 h-9 rounded-2xl bg-pink-100 text-pink-700 flex items-center justify-center font-bold">
-              <Sparkles className="w-5 h-5" />
-            </div>
-          </div>
-          <div className="text-4xl font-black text-pink-600">
-            {stats ? stats.metrics.totalPrintJobs : "-"}
-          </div>
-          <div className="text-xs font-medium text-[#64748b]">
-            Revenue: ₹{stats ? stats.metrics.totalRevenue.toFixed(2) : "0.00"}
-          </div>
-        </div>
-
-      </div>
-
-      {/* ── Recent Blogs & Activity Stream ────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Recent Blogs Table */}
-        <div className="lg:col-span-2 bg-white/80 backdrop-blur-3xl border border-white/90 rounded-[36px] p-7 space-y-6 shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-200/80 pb-4">
-            <h2 className="text-xl font-extrabold text-[#0f1015] flex items-center gap-2.5">
-              <FileText className="w-5 h-5 text-purple-600" />
-              <span>Recent Articles</span>
+            <h2 className="text-2xl font-black text-[#0f1015] tracking-tight flex items-center gap-2">
+              <Send className="w-6 h-6 text-indigo-600" />
+              <span>Platform File Transfers & Storage</span>
             </h2>
-            <Link
-              href="/blogs"
-              className="text-xs font-extrabold text-[#0f1015] hover:text-purple-600 flex items-center gap-1 bg-white/90 border border-white px-3 py-1.5 rounded-full shadow-xs"
-            >
-              <span>View All</span>
-              <ArrowUpRight className="w-3.5 h-3.5" />
-            </Link>
+            <p className="text-xs font-medium text-[#64748b]">
+              Direct metrics from encrypted Supabase database records and telemetry logs
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-white/80 border border-slate-200 text-xs font-bold text-slate-700 shadow-xs">
+              <Activity className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
+              Live DB Synced
+            </span>
+          </div>
+        </div>
+
+        {/* Transfer KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          
+          {/* Total Files Transferred */}
+          <div className="bg-white/80 backdrop-blur-2xl border border-white/90 rounded-[32px] p-6 space-y-3 shadow-[0_10px_30px_rgba(31,18,60,0.04)] hover:shadow-lg transition-all group">
+            <div className="flex items-center justify-between text-[#64748b]">
+              <span className="text-xs font-black uppercase tracking-wider">Total Transfers Done</span>
+              <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold group-hover:scale-110 transition-transform">
+                <Send className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="text-4xl font-black text-[#0f1015] tracking-tight">
+              {transfers.totalCount !== undefined ? transfers.totalCount.toLocaleString() : (loading ? "..." : "0")}
+            </div>
+            <div className="flex items-center justify-between text-xs font-medium text-[#64748b] pt-1 border-t border-slate-100">
+              <span className="text-emerald-600 font-bold">{transfers.printedJobs || 0} completed</span>
+              <span className="text-amber-600 font-bold">{transfers.pendingJobs || 0} queued</span>
+            </div>
+          </div>
+
+          {/* Total Data Volume */}
+          <div className="bg-white/80 backdrop-blur-2xl border border-white/90 rounded-[32px] p-6 space-y-3 shadow-[0_10px_30px_rgba(31,18,60,0.04)] hover:shadow-lg transition-all group">
+            <div className="flex items-center justify-between text-[#64748b]">
+              <span className="text-xs font-black uppercase tracking-wider">Volume Transferred</span>
+              <div className="w-10 h-10 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold group-hover:scale-110 transition-transform">
+                <HardDrive className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="text-4xl font-black text-[#0f1015] tracking-tight">
+              {formatBytes(transfers.totalBytes)}
+            </div>
+            <div className="text-xs font-medium text-[#64748b] pt-1 border-t border-slate-100 flex items-center justify-between">
+              <span>Cloudflare R2 + Postgres</span>
+              <span className="text-purple-600 font-bold">100% Encrypted</span>
+            </div>
+          </div>
+
+          {/* Total Pages */}
+          <div className="bg-white/80 backdrop-blur-2xl border border-white/90 rounded-[32px] p-6 space-y-3 shadow-[0_10px_30px_rgba(31,18,60,0.04)] hover:shadow-lg transition-all group">
+            <div className="flex items-center justify-between text-[#64748b]">
+              <span className="text-xs font-black uppercase tracking-wider">Total Pages Processed</span>
+              <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold group-hover:scale-110 transition-transform">
+                <Layers className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="text-4xl font-black text-[#0f1015] tracking-tight">
+              {transfers.totalPages !== undefined ? transfers.totalPages.toLocaleString() : (loading ? "..." : "0")}
+            </div>
+            <div className="text-xs font-medium text-[#64748b] pt-1 border-t border-slate-100 flex items-center justify-between">
+              <span>Print Shop Dispatch</span>
+              <span className="text-rose-600 font-bold">Docs & Sheets</span>
+            </div>
+          </div>
+
+          {/* Total Revenue */}
+          <div className="bg-white/80 backdrop-blur-2xl border border-white/90 rounded-[32px] p-6 space-y-3 shadow-[0_10px_30px_rgba(31,18,60,0.04)] hover:shadow-lg transition-all group">
+            <div className="flex items-center justify-between text-[#64748b]">
+              <span className="text-xs font-black uppercase tracking-wider">Processed Volume</span>
+              <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold group-hover:scale-110 transition-transform">
+                <IndianRupee className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="text-4xl font-black text-emerald-600 tracking-tight">
+              ₹{transfers.totalRevenue !== undefined ? transfers.totalRevenue.toFixed(2) : "0.00"}
+            </div>
+            <div className="text-xs font-medium text-[#64748b] pt-1 border-t border-slate-100 flex items-center justify-between">
+              <span>{transfers.totalVendors || 0} Registered Vendors</span>
+              <span className="text-emerald-700 font-bold">{transfers.activeShops || 0} Open</span>
+            </div>
+          </div>
+
+        </div>
+
+        {/* Telemetry Activity & Formats Bar */}
+        <div className="bg-white/80 backdrop-blur-3xl border border-white/90 rounded-[32px] p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="flex flex-wrap items-center gap-6 w-full md:w-auto">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                <Activity className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-[#64748b]">Transfer Events</div>
+                <div className="text-sm font-black text-[#0f1015]">
+                  {transfers.totalUploadEvents || 0} Uploads · {transfers.totalDownloadEvents || 0} Downloads · {transfers.totalPreviewEvents || 0} Previews
+                </div>
+              </div>
+            </div>
+
+            <div className="h-8 w-[1px] bg-slate-200 hidden md:block" />
+
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+                <Store className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-[#64748b]">Print Shop Network</div>
+                <div className="text-sm font-black text-[#0f1015]">
+                  {transfers.totalShops || 0} Configured · {transfers.activeShops || 0} Accepting Orders
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Formats distribution pill */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-black text-slate-500 mr-1">File Types:</span>
+            {fileTypes.length > 0 ? (
+              fileTypes.map((ft: any) => (
+                <span
+                  key={ft.file_type || "unknown"}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-100 border border-slate-200/80 text-[11px] font-bold text-slate-700"
+                >
+                  {getFileIcon(ft.file_type)}
+                  <span>{(ft.file_type || "file").replace("application/", "").replace("image/", "")}</span>
+                  <span className="text-slate-400">({ft.count})</span>
+                </span>
+              ))
+            ) : (
+              <span className="text-xs text-slate-400">PDF, DOCX, Images</span>
+            )}
+          </div>
+        </div>
+
+        {/* Recent File Transfers Log Table */}
+        <div className="bg-white/80 backdrop-blur-3xl border border-white/90 rounded-[36px] p-7 space-y-5 shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between border-b border-slate-200/80 pb-4">
+            <div>
+              <h3 className="text-lg font-black text-[#0f1015] flex items-center gap-2.5">
+                <History className="w-5 h-5 text-indigo-600" />
+                <span>Recent File Transfer Stream</span>
+              </h3>
+              <p className="text-xs font-medium text-[#64748b] mt-0.5">
+                Real-time transfer transactions recorded across the Share2Me network
+              </p>
+            </div>
+            <span className="text-xs font-black text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100">
+              Latest 10 Transfers
+            </span>
           </div>
 
           {loading ? (
-            <div className="py-12 text-center text-[#64748b] text-sm font-medium">Loading articles...</div>
-          ) : blogs.length === 0 ? (
-            <div className="py-12 text-center text-[#64748b] space-y-3">
-              <p className="text-sm font-medium">No blog articles created yet.</p>
-              <Link
-                href="/blogs/editor"
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#0f1015] text-white font-extrabold text-xs shadow-md"
-              >
-                Create First Blog
-              </Link>
-            </div>
+            <div className="py-12 text-center text-[#64748b] text-sm font-medium">Loading transfer records...</div>
+          ) : recentTransfers.length === 0 ? (
+            <div className="py-12 text-center text-[#64748b] text-sm font-medium">No transfer records found in database.</div>
           ) : (
-            <div className="space-y-3">
-              {blogs.slice(0, 5).map((blog) => (
-                <div
-                  key={blog.id}
-                  className="p-4 bg-white/90 border border-white rounded-2xl flex items-center justify-between gap-4 shadow-xs hover:shadow-md transition-shadow"
-                >
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex items-center gap-2.5">
-                      <span className="font-extrabold text-sm text-[#0f1015] truncate max-w-md">{blog.title}</span>
-                      <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
-                        blog.status === "published"
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-amber-100 text-amber-800"
-                      }`}>
-                        {blog.status}
-                      </span>
-                    </div>
-                    <div className="text-xs font-mono text-[#64748b] truncate">
-                      /{blog.slug}
-                    </div>
-                  </div>
-
-                  <Link
-                    href={`/blogs/editor?id=${blog.id}`}
-                    className="px-4 py-2 rounded-full bg-[#0f1015] text-white hover:bg-[#1f232c] text-xs font-extrabold transition-all shrink-0 shadow-sm"
-                  >
-                    Edit
-                  </Link>
-                </div>
-              ))}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-100 text-slate-400 font-black uppercase tracking-wider">
+                    <th className="pb-3 pl-2">Document</th>
+                    <th className="pb-3">Sender</th>
+                    <th className="pb-3">Size</th>
+                    <th className="pb-3">Pages</th>
+                    <th className="pb-3">Status</th>
+                    <th className="pb-3">Payment</th>
+                    <th className="pb-3 pr-2 text-right">Time</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {recentTransfers.map((job: any) => (
+                    <tr key={job.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="py-3 pl-2 max-w-[240px]">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 rounded-xl bg-slate-100 shrink-0">
+                            {getFileIcon(job.file_type)}
+                          </div>
+                          <span className="font-extrabold text-[#0f1015] truncate" title={job.document_name}>
+                            {job.document_name || "Document"}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-3 text-slate-600">
+                        {job.sender_name || "Anonymous"}
+                      </td>
+                      <td className="py-3 font-mono text-slate-600">
+                        {formatBytes(job.file_size_bytes)}
+                      </td>
+                      <td className="py-3 font-semibold text-slate-700">
+                        {job.pages ? `${job.pages} p.` : "—"}
+                      </td>
+                      <td className="py-3">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                          job.job_status === "printed" 
+                            ? "bg-emerald-100 text-emerald-800" 
+                            : job.job_status === "rejected"
+                            ? "bg-rose-100 text-rose-800"
+                            : "bg-blue-100 text-blue-800"
+                        }`}>
+                          {job.job_status}
+                        </span>
+                      </td>
+                      <td className="py-3">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          job.payment_status === "paid" 
+                            ? "bg-emerald-50 text-emerald-700" 
+                            : "bg-slate-100 text-slate-600"
+                        }`}>
+                          {job.payment_status === "paid" ? `₹${parseFloat(job.total_amount || 0).toFixed(0)}` : "Unpaid"}
+                        </span>
+                      </td>
+                      <td className="py-3 pr-2 text-right text-slate-400 font-mono text-[11px]">
+                        {new Date(job.created_at).toLocaleDateString()} {new Date(job.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
+      </div>
 
-        {/* Audit Activity Stream */}
-        <div className="bg-white/80 backdrop-blur-3xl border border-white/90 rounded-[36px] p-7 space-y-6 shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-200/80 pb-4">
-            <h2 className="text-xl font-extrabold text-[#0f1015] flex items-center gap-2.5">
-              <History className="w-5 h-5 text-blue-600" />
-              <span>Activity Log</span>
-            </h2>
-            <Link
-              href="/logs"
-              className="text-xs font-extrabold text-[#0f1015] hover:text-blue-600"
-            >
-              Logs
-            </Link>
+      {/* ── 3. Content Management & Publishing System ──────────────────────── */}
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-black text-[#0f1015] tracking-tight flex items-center gap-2">
+            <FileText className="w-6 h-6 text-purple-600" />
+            <span>Blog Articles & Multi-Site CMS</span>
+          </h2>
+          <p className="text-xs font-medium text-[#64748b]">
+            Publish verified HTML/JSON articles to share2.me and share2me.in with automated SEO checks
+          </p>
+        </div>
+
+        {/* CMS Metric Cards Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          
+          {/* Total Articles */}
+          <div className="bg-white/70 backdrop-blur-2xl border border-white/80 rounded-[32px] p-6 space-y-3 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between text-[#64748b]">
+              <span className="text-xs font-extrabold uppercase tracking-wider">Total Articles</span>
+              <div className="w-9 h-9 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold">
+                <FileText className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="text-4xl font-black text-[#0f1015]">{totalBlogs}</div>
+            <div className="text-xs font-medium text-[#64748b]">Across all target sites</div>
           </div>
 
-          {logs.length === 0 ? (
-            <div className="py-12 text-center text-[#64748b] text-xs font-medium">No activity logged yet.</div>
-          ) : (
-            <div className="space-y-3">
-              {logs.map((log) => (
-                <div key={log.id} className="p-3.5 bg-white/90 rounded-2xl border border-white text-xs space-y-1 shadow-xs">
-                  <div className="flex items-center justify-between text-[#0f1015] font-extrabold">
-                    <span className="truncate max-w-[160px]">{log.action}</span>
-                    <span className={`text-[10px] font-black ${log.status === "SUCCESS" ? "text-emerald-600" : "text-rose-600"}`}>
-                      {log.status}
-                    </span>
-                  </div>
-                  <div className="text-[11px] font-medium text-[#64748b] truncate">{log.blog_title || "Blog item"}</div>
-                  <div className="text-[10px] text-[#64748b]">
-                    {new Date(log.timestamp).toLocaleTimeString()} · {log.admin_email}
-                  </div>
-                </div>
-              ))}
+          {/* Published */}
+          <div className="bg-white/70 backdrop-blur-2xl border border-white/80 rounded-[32px] p-6 space-y-3 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between text-[#64748b]">
+              <span className="text-xs font-extrabold uppercase tracking-wider">Published</span>
+              <div className="w-9 h-9 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
             </div>
-          )}
+            <div className="text-4xl font-black text-emerald-600">{publishedBlogs}</div>
+            <div className="text-xs font-medium text-[#64748b]">Live on websites</div>
+          </div>
+
+          {/* Drafts */}
+          <div className="bg-white/70 backdrop-blur-2xl border border-white/80 rounded-[32px] p-6 space-y-3 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between text-[#64748b]">
+              <span className="text-xs font-extrabold uppercase tracking-wider">Drafts</span>
+              <div className="w-9 h-9 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
+                <Clock className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="text-4xl font-black text-amber-600">{draftBlogs}</div>
+            <div className="text-xs font-medium text-[#64748b]">Work in progress</div>
+          </div>
+
+        </div>
+
+        {/* ── Recent Blogs & Activity Stream ────────────────────────────────── */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          
+          {/* Recent Blogs Table */}
+          <div className="lg:col-span-2 bg-white/80 backdrop-blur-3xl border border-white/90 rounded-[36px] p-7 space-y-6 shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-200/80 pb-4">
+              <h3 className="text-lg font-extrabold text-[#0f1015] flex items-center gap-2.5">
+                <FileText className="w-5 h-5 text-purple-600" />
+                <span>Recent Articles</span>
+              </h3>
+              <Link
+                href="/blogs"
+                className="text-xs font-extrabold text-[#0f1015] hover:text-purple-600 flex items-center gap-1 bg-white/90 border border-white px-3 py-1.5 rounded-full shadow-xs"
+              >
+                <span>View All</span>
+                <ArrowUpRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
+            {loading ? (
+              <div className="py-12 text-center text-[#64748b] text-sm font-medium">Loading articles...</div>
+            ) : blogs.length === 0 ? (
+              <div className="py-12 text-center text-[#64748b] space-y-3">
+                <p className="text-sm font-medium">No blog articles created yet.</p>
+                <Link
+                  href="/blogs/editor"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#0f1015] text-white font-extrabold text-xs shadow-md"
+                >
+                  Create First Blog
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {blogs.slice(0, 5).map((blog) => (
+                  <div
+                    key={blog.id}
+                    className="p-4 bg-white/90 border border-white rounded-2xl flex items-center justify-between gap-4 shadow-xs hover:shadow-md transition-shadow"
+                  >
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex items-center gap-2.5">
+                        <span className="font-extrabold text-sm text-[#0f1015] truncate max-w-md">{blog.title}</span>
+                        <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+                          blog.status === "published"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-amber-100 text-amber-800"
+                        }`}>
+                          {blog.status}
+                        </span>
+                      </div>
+                      <div className="text-xs font-mono text-[#64748b] truncate">
+                        /{blog.slug}
+                      </div>
+                    </div>
+
+                    <Link
+                      href={`/blogs/editor?id=${blog.id}`}
+                      className="px-4 py-2 rounded-full bg-[#0f1015] text-white hover:bg-[#1f232c] text-xs font-extrabold transition-all shrink-0 shadow-sm"
+                    >
+                      Edit
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Audit Activity Stream */}
+          <div className="bg-white/80 backdrop-blur-3xl border border-white/90 rounded-[36px] p-7 space-y-6 shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-200/80 pb-4">
+              <h3 className="text-lg font-extrabold text-[#0f1015] flex items-center gap-2.5">
+                <History className="w-5 h-5 text-blue-600" />
+                <span>Activity Log</span>
+              </h3>
+              <Link
+                href="/logs"
+                className="text-xs font-extrabold text-[#0f1015] hover:text-blue-600"
+              >
+                Logs
+              </Link>
+            </div>
+
+            {logs.length === 0 ? (
+              <div className="py-12 text-center text-[#64748b] text-xs font-medium">No activity logged yet.</div>
+            ) : (
+              <div className="space-y-3">
+                {logs.map((log) => (
+                  <div key={log.id} className="p-3.5 bg-white/90 rounded-2xl border border-white text-xs space-y-1 shadow-xs">
+                    <div className="flex items-center justify-between text-[#0f1015] font-extrabold">
+                      <span className="truncate max-w-[160px]">{log.action}</span>
+                      <span className={`text-[10px] font-black ${log.status === "SUCCESS" ? "text-emerald-600" : "text-rose-600"}`}>
+                        {log.status}
+                      </span>
+                    </div>
+                    <div className="text-[11px] font-medium text-[#64748b] truncate">{log.blog_title || "Blog item"}</div>
+                    <div className="text-[10px] text-[#64748b]">
+                      {new Date(log.timestamp).toLocaleTimeString()} · {log.admin_email}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
         </div>
 
       </div>
 
-      {/* ── System Controls ──────────────────────────────────────────────── */}
+      {/* ── 4. System Controls ────────────────────────────────────────────── */}
       <div className="bg-white/80 backdrop-blur-3xl border border-white/90 rounded-[36px] p-7 space-y-6 shadow-sm">
         <div className="flex items-center justify-between border-b border-slate-200/80 pb-4">
           <h2 className="text-xl font-extrabold text-[#0f1015] flex items-center gap-2.5">
             <Globe className="w-5 h-5 text-indigo-600" />
-            <span>System Controls</span>
+            <span>Automated AI Controls</span>
           </h2>
         </div>
         
