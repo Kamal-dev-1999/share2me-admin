@@ -16,7 +16,10 @@ router.get('/stats', async (req, res) => {
       recentTransfersRes,
       fileTypesRes,
       monthlyTrendRes,
-      recentVendorsRes
+      recentVendorsRes,
+      p2pSummaryRes,
+      p2pCategoriesRes,
+      p2pRecentRes
     ] = await Promise.all([
       db.query(`
         SELECT 
@@ -85,44 +88,102 @@ router.get('/stats', async (req, res) => {
         FROM vendors 
         ORDER BY created_at DESC 
         LIMIT 5
+      `).catch(() => ({ rows: [] })),
+      db.query(`
+        SELECT 
+          COALESCE(total_transfers, 0) AS total_transfers,
+          COALESCE(total_bytes, 0) AS total_bytes,
+          last_updated
+        FROM p2p_telemetry_totals
+        WHERE id = 1
+      `).catch(() => ({ rows: [{ total_transfers: 0, total_bytes: 0, last_updated: null }] })),
+      db.query(`
+        SELECT 
+          file_type_category,
+          COUNT(*) AS count,
+          COALESCE(SUM(file_size_bytes), 0) AS bytes
+        FROM p2p_transfer_events
+        GROUP BY file_type_category
+        ORDER BY count DESC
+      `).catch(() => ({ rows: [] })),
+      db.query(`
+        SELECT 
+          id,
+          file_size_bytes,
+          file_type_category,
+          is_text_mode,
+          created_at
+        FROM p2p_transfer_events
+        ORDER BY created_at DESC
+        LIMIT 10
       `).catch(() => ({ rows: [] }))
     ]);
 
     const jobs = jobsSummaryRes.rows[0];
     const events = eventsSummaryRes.rows[0];
     const vendors = vendorsSummaryRes.rows[0];
+    const p2pTotals = p2pSummaryRes.rows[0] || { total_transfers: 0, total_bytes: 0 };
 
-    const totalTransfers = parseInt(jobs.total_transfers, 10);
-    const totalBytes = parseInt(jobs.total_bytes, 10);
-    const totalRevenue = parseFloat(jobs.total_revenue);
+    const p2pCount = parseInt(p2pTotals.total_transfers, 10) || 0;
+    const p2pBytes = parseInt(p2pTotals.total_bytes, 10) || 0;
+    const g2pCount = parseInt(jobs.total_transfers, 10) || 0;
+    const g2pBytes = parseInt(jobs.total_bytes, 10) || 0;
+    const totalRevenue = parseFloat(jobs.total_revenue) || 0;
+
+    const platformTotalFiles = p2pCount + g2pCount;
+    const platformTotalBytes = p2pBytes + g2pBytes;
 
     res.json({
-      metrics: {
-        totalVendors: parseInt(vendors.total_vendors, 10),
-        totalTransfers,
-        totalFiles: totalTransfers,
-        totalPrintJobs: totalTransfers,
-        totalBytes,
-        totalPages: parseInt(jobs.total_pages, 10),
+      summary: {
+        platformTotalFiles,
+        platformTotalBytes,
+      },
+      p2p: {
+        totalCount: p2pCount,
+        totalBytes: p2pBytes,
+        categories: p2pCategoriesRes.rows,
+        recent: p2pRecentRes.rows,
+      },
+      g2p: {
+        totalCount: g2pCount,
+        totalBytes: g2pBytes,
+        totalPages: parseInt(jobs.total_pages, 10) || 0,
         totalRevenue,
-        printedJobs: parseInt(jobs.printed_jobs, 10),
-        pendingJobs: parseInt(jobs.pending_jobs, 10),
-        activeShops: parseInt(vendors.active_shops, 10),
-        totalShops: parseInt(vendors.total_shops, 10),
+        printedJobs: parseInt(jobs.printed_jobs, 10) || 0,
+        pendingJobs: parseInt(jobs.pending_jobs, 10) || 0,
+      },
+      metrics: {
+        totalVendors: parseInt(vendors.total_vendors, 10) || 0,
+        totalTransfers: platformTotalFiles,
+        totalFiles: platformTotalFiles,
+        p2pTransfers: p2pCount,
+        p2pBytes,
+        totalPrintJobs: g2pCount,
+        totalBytes: platformTotalBytes,
+        totalPages: parseInt(jobs.total_pages, 10) || 0,
+        totalRevenue,
+        printedJobs: parseInt(jobs.printed_jobs, 10) || 0,
+        pendingJobs: parseInt(jobs.pending_jobs, 10) || 0,
+        activeShops: parseInt(vendors.active_shops, 10) || 0,
+        totalShops: parseInt(vendors.total_shops, 10) || 0,
       },
       transfers: {
-        totalCount: totalTransfers,
-        totalBytes,
-        totalPages: parseInt(jobs.total_pages, 10),
+        totalCount: platformTotalFiles,
+        totalBytes: platformTotalBytes,
+        p2pCount,
+        p2pBytes,
+        g2pCount,
+        g2pBytes,
+        totalPages: parseInt(jobs.total_pages, 10) || 0,
         totalRevenue,
-        printedJobs: parseInt(jobs.printed_jobs, 10),
-        pendingJobs: parseInt(jobs.pending_jobs, 10),
-        totalUploadEvents: parseInt(events.total_uploads, 10),
-        totalDownloadEvents: parseInt(events.total_downloads, 10),
-        totalPreviewEvents: parseInt(events.total_previews, 10),
-        totalVendors: parseInt(vendors.total_vendors, 10),
-        activeShops: parseInt(vendors.active_shops, 10),
-        totalShops: parseInt(vendors.total_shops, 10),
+        printedJobs: parseInt(jobs.printed_jobs, 10) || 0,
+        pendingJobs: parseInt(jobs.pending_jobs, 10) || 0,
+        totalUploadEvents: parseInt(events.total_uploads, 10) || 0,
+        totalDownloadEvents: parseInt(events.total_downloads, 10) || 0,
+        totalPreviewEvents: parseInt(events.total_previews, 10) || 0,
+        totalVendors: parseInt(vendors.total_vendors, 10) || 0,
+        activeShops: parseInt(vendors.active_shops, 10) || 0,
+        totalShops: parseInt(vendors.total_shops, 10) || 0,
       },
       recentTransfers: recentTransfersRes.rows,
       fileTypes: fileTypesRes.rows,

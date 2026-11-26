@@ -36,6 +36,7 @@ export default function AdminDashboardPage() {
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [githubTriggerLoading, setGithubTriggerLoading] = useState(false);
+  const [streamTab, setStreamTab] = useState<"g2p" | "p2p">("g2p");
 
   useEffect(() => {
     async function fetchDashboardData() {
@@ -99,8 +100,13 @@ export default function AdminDashboardPage() {
   const draftBlogs = blogs.filter((b) => b.status === "draft").length;
 
   const transfers = stats?.transfers || {};
+  const p2p = stats?.p2p || {};
+  const g2p = stats?.g2p || {};
+  const summary = stats?.summary || {};
   const recentTransfers = stats?.recentTransfers || [];
   const fileTypes = stats?.fileTypes || [];
+  const p2pRecent = p2p.recent || [];
+  const p2pCategories = p2p.categories || [];
 
   return (
     <div className="p-6 md:p-10 space-y-10 max-w-7xl mx-auto font-sans">
@@ -116,7 +122,7 @@ export default function AdminDashboardPage() {
             Welcome back, <span className="text-purple-600">{session?.user?.name || "Admin"}</span>
           </h1>
           <p className="text-sm font-medium text-[#5c6578] max-w-xl leading-relaxed">
-            Monitor real-time file transfer telemetry, manage print shop operations, and publish verified articles to <strong className="text-[#0f1015]">share2.me</strong> and <strong className="text-[#0f1015]">share2me.in</strong>.
+            Monitor real-time telemetry across direct WebRTC peer-to-peer transfers, print shop operations, and publish verified articles to <strong className="text-[#0f1015]">share2.me</strong> and <strong className="text-[#0f1015]">share2me.in</strong>.
           </p>
         </div>
 
@@ -144,10 +150,10 @@ export default function AdminDashboardPage() {
             </div>
             <h2 className="text-2xl font-black text-[#0f1015] tracking-tight flex items-center gap-2">
               <Send className="w-6 h-6 text-indigo-600" />
-              <span>Platform File Transfers & Storage</span>
+              <span>End-to-End File Transfers & Volume</span>
             </h2>
             <p className="text-xs font-medium text-[#64748b]">
-              Direct metrics from encrypted Supabase database records and telemetry logs
+              Direct WebRTC P2P + G2P Print Shop Database Records
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -164,58 +170,58 @@ export default function AdminDashboardPage() {
           {/* Total Files Transferred */}
           <div className="bg-white/80 backdrop-blur-2xl border border-white/90 rounded-[32px] p-6 space-y-3 shadow-[0_10px_30px_rgba(31,18,60,0.04)] hover:shadow-lg transition-all group">
             <div className="flex items-center justify-between text-[#64748b]">
-              <span className="text-xs font-black uppercase tracking-wider">Total Transfers Done</span>
+              <span className="text-xs font-black uppercase tracking-wider">Total Files Transferred</span>
               <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold group-hover:scale-110 transition-transform">
                 <Send className="w-5 h-5" />
               </div>
             </div>
             <div className="text-4xl font-black text-[#0f1015] tracking-tight">
-              {transfers.totalCount !== undefined ? transfers.totalCount.toLocaleString() : (loading ? "..." : "0")}
+              {loading ? "..." : (summary.platformTotalFiles ?? transfers.totalCount ?? 0).toLocaleString()}
             </div>
             <div className="flex items-center justify-between text-xs font-medium text-[#64748b] pt-1 border-t border-slate-100">
-              <span className="text-emerald-600 font-bold">{transfers.printedJobs || 0} completed</span>
-              <span className="text-amber-600 font-bold">{transfers.pendingJobs || 0} queued</span>
+              <span className="text-indigo-600 font-bold">{(transfers.p2pCount || 0).toLocaleString()} P2P</span>
+              <span className="text-purple-600 font-bold">{(transfers.g2pCount || 0).toLocaleString()} Print Shop</span>
             </div>
           </div>
 
           {/* Total Data Volume */}
           <div className="bg-white/80 backdrop-blur-2xl border border-white/90 rounded-[32px] p-6 space-y-3 shadow-[0_10px_30px_rgba(31,18,60,0.04)] hover:shadow-lg transition-all group">
             <div className="flex items-center justify-between text-[#64748b]">
-              <span className="text-xs font-black uppercase tracking-wider">Volume Transferred</span>
+              <span className="text-xs font-black uppercase tracking-wider">Total Volume Moved</span>
               <div className="w-10 h-10 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold group-hover:scale-110 transition-transform">
                 <HardDrive className="w-5 h-5" />
               </div>
             </div>
             <div className="text-4xl font-black text-[#0f1015] tracking-tight">
-              {formatBytes(transfers.totalBytes)}
+              {loading ? "..." : formatBytes(summary.platformTotalBytes ?? transfers.totalBytes ?? 0)}
             </div>
             <div className="text-xs font-medium text-[#64748b] pt-1 border-t border-slate-100 flex items-center justify-between">
-              <span>Cloudflare R2 + Postgres</span>
-              <span className="text-purple-600 font-bold">100% Encrypted</span>
+              <span className="text-indigo-600 font-bold">{formatBytes(transfers.p2pBytes || 0)} P2P</span>
+              <span className="text-purple-600 font-bold">{formatBytes(transfers.g2pBytes || 0)} R2</span>
             </div>
           </div>
 
-          {/* Total Pages */}
+          {/* Direct P2P Network */}
           <div className="bg-white/80 backdrop-blur-2xl border border-white/90 rounded-[32px] p-6 space-y-3 shadow-[0_10px_30px_rgba(31,18,60,0.04)] hover:shadow-lg transition-all group">
             <div className="flex items-center justify-between text-[#64748b]">
-              <span className="text-xs font-black uppercase tracking-wider">Total Pages Processed</span>
-              <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold group-hover:scale-110 transition-transform">
+              <span className="text-xs font-black uppercase tracking-wider">Direct P2P Transfers</span>
+              <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold group-hover:scale-110 transition-transform">
                 <Layers className="w-5 h-5" />
               </div>
             </div>
             <div className="text-4xl font-black text-[#0f1015] tracking-tight">
-              {transfers.totalPages !== undefined ? transfers.totalPages.toLocaleString() : (loading ? "..." : "0")}
+              {loading ? "..." : (transfers.p2pCount ?? 0).toLocaleString()}
             </div>
             <div className="text-xs font-medium text-[#64748b] pt-1 border-t border-slate-100 flex items-center justify-between">
-              <span>Print Shop Dispatch</span>
-              <span className="text-rose-600 font-bold">Docs & Sheets</span>
+              <span>{formatBytes(transfers.p2pBytes || 0)}</span>
+              <span className="text-blue-600 font-bold">End-to-End Encrypted</span>
             </div>
           </div>
 
           {/* Total Revenue */}
           <div className="bg-white/80 backdrop-blur-2xl border border-white/90 rounded-[32px] p-6 space-y-3 shadow-[0_10px_30px_rgba(31,18,60,0.04)] hover:shadow-lg transition-all group">
             <div className="flex items-center justify-between text-[#64748b]">
-              <span className="text-xs font-black uppercase tracking-wider">Processed Volume</span>
+              <span className="text-xs font-black uppercase tracking-wider">Print Shop Revenue</span>
               <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold group-hover:scale-110 transition-transform">
                 <IndianRupee className="w-5 h-5" />
               </div>
@@ -224,66 +230,51 @@ export default function AdminDashboardPage() {
               ₹{transfers.totalRevenue !== undefined ? transfers.totalRevenue.toFixed(2) : "0.00"}
             </div>
             <div className="text-xs font-medium text-[#64748b] pt-1 border-t border-slate-100 flex items-center justify-between">
-              <span>{transfers.totalVendors || 0} Registered Vendors</span>
-              <span className="text-emerald-700 font-bold">{transfers.activeShops || 0} Open</span>
+              <span>{(transfers.totalPages || 0).toLocaleString()} pages</span>
+              <span className="text-emerald-700 font-bold">{transfers.totalVendors || 0} Vendors</span>
             </div>
           </div>
 
         </div>
 
-        {/* Telemetry Activity & Formats Bar */}
-        <div className="bg-white/80 backdrop-blur-3xl border border-white/90 rounded-[32px] p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="flex flex-wrap items-center gap-6 w-full md:w-auto">
+        {/* Channel Breakdown Overview Bar */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="p-4 bg-white/80 rounded-2xl border border-slate-200/80 flex items-center justify-between shadow-2xs">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                <Activity className="w-5 h-5" />
+              <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                <Send className="w-4 h-4" />
               </div>
               <div>
-                <div className="text-xs font-bold text-[#64748b]">Transfer Events</div>
-                <div className="text-sm font-black text-[#0f1015]">
-                  {transfers.totalUploadEvents || 0} Uploads · {transfers.totalDownloadEvents || 0} Downloads · {transfers.totalPreviewEvents || 0} Previews
-                </div>
+                <div className="text-xs font-black text-[#0f1015]">P2P Direct Network</div>
+                <div className="text-[11px] text-[#64748b]">Browser-to-browser WebRTC encrypted transfers</div>
               </div>
             </div>
-
-            <div className="h-8 w-[1px] bg-slate-200 hidden md:block" />
-
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
-                <Store className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-[#64748b]">Print Shop Network</div>
-                <div className="text-sm font-black text-[#0f1015]">
-                  {transfers.totalShops || 0} Configured · {transfers.activeShops || 0} Accepting Orders
-                </div>
-              </div>
+            <div className="text-right">
+              <div className="text-sm font-black text-indigo-700">{(transfers.p2pCount ?? 0).toLocaleString()} files</div>
+              <div className="text-[11px] font-mono text-slate-500">{formatBytes(transfers.p2pBytes ?? 0)}</div>
             </div>
           </div>
 
-          {/* Formats distribution pill */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-black text-slate-500 mr-1">File Types:</span>
-            {fileTypes.length > 0 ? (
-              fileTypes.map((ft: any) => (
-                <span
-                  key={ft.file_type || "unknown"}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-100 border border-slate-200/80 text-[11px] font-bold text-slate-700"
-                >
-                  {getFileIcon(ft.file_type)}
-                  <span>{(ft.file_type || "file").replace("application/", "").replace("image/", "")}</span>
-                  <span className="text-slate-400">({ft.count})</span>
-                </span>
-              ))
-            ) : (
-              <span className="text-xs text-slate-400">PDF, DOCX, Images</span>
-            )}
+          <div className="p-4 bg-white/80 rounded-2xl border border-slate-200/80 flex items-center justify-between shadow-2xs">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+                <Store className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-xs font-black text-[#0f1015]">Print Shop (G2P) Ecosystem</div>
+                <div className="text-[11px] text-[#64748b]">{transfers.activeShops ?? 0} active shops · {transfers.printedJobs ?? 0} printed</div>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-sm font-black text-purple-700">{(transfers.g2pCount ?? 0).toLocaleString()} jobs</div>
+              <div className="text-[11px] font-mono text-emerald-600 font-bold">₹{(transfers.totalRevenue ?? 0).toFixed(2)}</div>
+            </div>
           </div>
         </div>
 
-        {/* Recent File Transfers Log Table */}
+        {/* Recent File Transfers Log Table with Tab Switcher */}
         <div className="bg-white/80 backdrop-blur-3xl border border-white/90 rounded-[36px] p-7 space-y-5 shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between border-b border-slate-200/80 pb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-4">
             <div>
               <h3 className="text-lg font-black text-[#0f1015] flex items-center gap-2.5">
                 <History className="w-5 h-5 text-indigo-600" />
@@ -293,79 +284,149 @@ export default function AdminDashboardPage() {
                 Real-time transfer transactions recorded across the Share2Me network
               </p>
             </div>
-            <span className="text-xs font-black text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100">
-              Latest 10 Transfers
-            </span>
+            <div className="inline-flex items-center p-1 rounded-full bg-slate-100 border border-slate-200 text-xs font-bold">
+              <button
+                onClick={() => setStreamTab("g2p")}
+                className={`px-3.5 py-1.5 rounded-full transition-all ${
+                  streamTab === "g2p"
+                    ? "bg-[#0f1015] text-white shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Print Shop Orders ({(transfers.g2pCount ?? 0)})
+              </button>
+              <button
+                onClick={() => setStreamTab("p2p")}
+                className={`px-3.5 py-1.5 rounded-full transition-all ${
+                  streamTab === "p2p"
+                    ? "bg-[#0f1015] text-white shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Direct P2P Transfers ({(transfers.p2pCount ?? 0)})
+              </button>
+            </div>
           </div>
 
           {loading ? (
             <div className="py-12 text-center text-[#64748b] text-sm font-medium">Loading transfer records...</div>
-          ) : recentTransfers.length === 0 ? (
-            <div className="py-12 text-center text-[#64748b] text-sm font-medium">No transfer records found in database.</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-slate-100 text-slate-400 font-black uppercase tracking-wider">
-                    <th className="pb-3 pl-2">Document</th>
-                    <th className="pb-3">Sender</th>
-                    <th className="pb-3">Size</th>
-                    <th className="pb-3">Pages</th>
-                    <th className="pb-3">Status</th>
-                    <th className="pb-3">Payment</th>
-                    <th className="pb-3 pr-2 text-right">Time</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-medium">
-                  {recentTransfers.map((job: any) => (
-                    <tr key={job.id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="py-3 pl-2 max-w-[240px]">
-                        <div className="flex items-center gap-2.5">
-                          <div className="p-2 rounded-xl bg-slate-100 shrink-0">
-                            {getFileIcon(job.file_type)}
-                          </div>
-                          <span className="font-extrabold text-[#0f1015] truncate" title={job.document_name}>
-                            {job.document_name || "Document"}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-3 text-slate-600">
-                        {job.sender_name || "Anonymous"}
-                      </td>
-                      <td className="py-3 font-mono text-slate-600">
-                        {formatBytes(job.file_size_bytes)}
-                      </td>
-                      <td className="py-3 font-semibold text-slate-700">
-                        {job.pages ? `${job.pages} p.` : "—"}
-                      </td>
-                      <td className="py-3">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                          job.job_status === "printed" 
-                            ? "bg-emerald-100 text-emerald-800" 
-                            : job.job_status === "rejected"
-                            ? "bg-rose-100 text-rose-800"
-                            : "bg-blue-100 text-blue-800"
-                        }`}>
-                          {job.job_status}
-                        </span>
-                      </td>
-                      <td className="py-3">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          job.payment_status === "paid" 
-                            ? "bg-emerald-50 text-emerald-700" 
-                            : "bg-slate-100 text-slate-600"
-                        }`}>
-                          {job.payment_status === "paid" ? `₹${parseFloat(job.total_amount || 0).toFixed(0)}` : "Unpaid"}
-                        </span>
-                      </td>
-                      <td className="py-3 pr-2 text-right text-slate-400 font-mono text-[11px]">
-                        {new Date(job.created_at).toLocaleDateString()} {new Date(job.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </td>
+          ) : streamTab === "g2p" ? (
+            recentTransfers.length === 0 ? (
+              <div className="py-12 text-center text-[#64748b] text-sm font-medium">No transfer records found in database.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-slate-400 font-black uppercase tracking-wider">
+                      <th className="pb-3 pl-2">Document</th>
+                      <th className="pb-3">Sender</th>
+                      <th className="pb-3">Size</th>
+                      <th className="pb-3">Pages</th>
+                      <th className="pb-3">Status</th>
+                      <th className="pb-3">Payment</th>
+                      <th className="pb-3 pr-2 text-right">Time</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {recentTransfers.map((job: any) => (
+                      <tr key={job.id} className="hover:bg-slate-50/60 transition-colors">
+                        <td className="py-3 pl-2 max-w-[240px]">
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-2 rounded-xl bg-slate-100 shrink-0">
+                              {getFileIcon(job.file_type)}
+                            </div>
+                            <span className="font-extrabold text-[#0f1015] truncate" title={job.document_name}>
+                              {job.document_name || "Document"}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-3 text-slate-600">
+                          {job.sender_name || "Anonymous"}
+                        </td>
+                        <td className="py-3 font-mono text-slate-600">
+                          {formatBytes(job.file_size_bytes)}
+                        </td>
+                        <td className="py-3 font-semibold text-slate-700">
+                          {job.pages ? `${job.pages} p.` : "—"}
+                        </td>
+                        <td className="py-3">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                            job.job_status === "printed" 
+                              ? "bg-emerald-100 text-emerald-800" 
+                              : job.job_status === "rejected"
+                              ? "bg-rose-100 text-rose-800"
+                              : "bg-blue-100 text-blue-800"
+                          }`}>
+                            {job.job_status}
+                          </span>
+                        </td>
+                        <td className="py-3">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            job.payment_status === "paid" 
+                              ? "bg-emerald-50 text-emerald-700" 
+                              : "bg-slate-100 text-slate-600"
+                          }`}>
+                            {job.payment_status === "paid" ? `₹${parseFloat(job.total_amount || 0).toFixed(0)}` : "Unpaid"}
+                          </span>
+                        </td>
+                        <td className="py-3 pr-2 text-right text-slate-400 font-mono text-[11px]">
+                          {new Date(job.created_at).toLocaleDateString()} {new Date(job.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          ) : (
+            p2pRecent.length === 0 ? (
+              <div className="py-12 text-center text-[#64748b] text-sm font-medium">
+                No direct P2P transfers logged yet. Newly completed P2P transfers will appear here in real-time.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs font-medium">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-slate-400 font-black uppercase tracking-wider">
+                      <th className="pb-3 pl-2">Transfer ID</th>
+                      <th className="pb-3">Category</th>
+                      <th className="pb-3">Size</th>
+                      <th className="pb-3">Mode</th>
+                      <th className="pb-3">Security</th>
+                      <th className="pb-3 pr-2 text-right">Timestamp</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-sans">
+                    {p2pRecent.map((p: any) => (
+                      <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3.5 pl-2 font-mono font-bold text-[#0f1015]">
+                          {p.id.slice(0, 8)}…
+                        </td>
+                        <td className="py-3.5 font-bold uppercase text-indigo-700">
+                          {p.file_type_category || "file"}
+                        </td>
+                        <td className="py-3.5 font-mono font-bold text-slate-700">
+                          {formatBytes(p.file_size_bytes)}
+                        </td>
+                        <td className="py-3.5">
+                          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold">
+                            {p.is_text_mode ? "Text Stream" : "Binary File"}
+                          </span>
+                        </td>
+                        <td className="py-3.5">
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase">
+                            AES-GCM-256
+                          </span>
+                        </td>
+                        <td className="py-3.5 pr-2 text-right text-slate-500 font-mono text-[11px]">
+                          {p.created_at ? new Date(p.created_at).toLocaleDateString() + " " + new Date(p.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "-"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
           )}
         </div>
       </div>
